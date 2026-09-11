@@ -1,0 +1,3 @@
+telemetry.sqlite
+telemetry.sqlite-*
+.DS_Store

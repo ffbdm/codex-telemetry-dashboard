@@ -1,0 +1,4 @@
+{"type":"session_meta","timestamp":"2026-09-10T12:00:00.000Z","payload":{"session_id":"session-fixture","model":"gpt-5.6-luna"}}
+{"type":"world_state","timestamp":"2026-09-10T12:00:01.000Z","payload":{"session_id":"session-fixture","model":"gpt-5.6-sol"}}
+{"type":"turn_context","timestamp":"2026-09-10T12:00:02.000Z","payload":{"session_id":"session-fixture","turn_id":"turn-fixture","root_turn_id":"root-fixture","model":"gpt-6-astra","effort":"medium"}}
+{"type":"token_usage_record","timestamp":"2026-09-10T12:00:03.000Z","ordinal":1,"payload":{"session_id":"session-fixture","turn_id":"turn-fixture","root_turn_id":"root-fixture","response_id":"response-fixture-shared","usage":{"input_tokens":100,"cached_input_tokens":20,"cache_write_input_tokens":0,"output_tokens":40,"reasoning_output_tokens":8,"total_tokens":140}}}
