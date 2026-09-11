@@ -9,14 +9,12 @@
   --signal: #7fc9a5;
   --panel-hover: #1b282e;
   --tag-line: #315e4c;
-  --atmosphere: rgba(128,183,210,.06);
   --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   --mono: "SF Mono", Menlo, Consolas, monospace;
 }
 
 * { box-sizing: border-box; }
 body { margin: 0; background: var(--ground); color: var(--ink); font-family: var(--sans); }
-body:before { content: ""; position: fixed; inset: 0; pointer-events: none; background: linear-gradient(90deg, transparent 0 7.1%, var(--atmosphere) 7.1% 7.18%, transparent 7.18%); opacity: .45; }
 .masthead, main, footer { max-width: 1760px; margin: auto; }
 .masthead { height: 70px; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid var(--line); padding: 0 28px; }
 .brand { color: var(--ink); text-decoration: none; letter-spacing: -.05em; font-size: 21px; }
