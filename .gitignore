@@ -1,3 +1,9 @@
-telemetry.sqlite
-telemetry.sqlite-*
+# Dados locais de telemetria: nunca versionar ou publicar.
+*.sqlite
+*.sqlite-*
+.env
+.env.*
+!.env.example
+*.pem
+*.key
 .DS_Store
