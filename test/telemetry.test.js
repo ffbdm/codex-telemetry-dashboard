@@ -574,6 +574,115 @@ test('TelemetryStore resolves model per usage event and aggregates only usage re
   }
 });
 
+test('TelemetryStore applies a half-open time range to overview, sessions, and session details', async () => {
+  const { directory, store } = await temporaryStore();
+  try {
+    const events = [
+      {
+        sessionId: 'session-before-range',
+        turnId: 'turn-before-range',
+        responseId: 'response-before-range',
+        timestamp: '2026-09-09T23:59:59.999Z',
+        inputTokens: 10,
+        outputTokens: 1,
+        totalTokens: 11
+      },
+      {
+        sessionId: 'session-in-range',
+        turnId: 'turn-at-range-start',
+        responseId: 'response-at-range-start',
+        timestamp: '2026-09-10T00:00:00.000Z',
+        inputTokens: 20,
+        outputTokens: 2,
+        totalTokens: 22
+      },
+      {
+        sessionId: 'session-in-range',
+        turnId: 'turn-in-range',
+        responseId: 'response-in-range',
+        timestamp: '2026-09-10T12:00:00.000Z',
+        inputTokens: 30,
+        outputTokens: 3,
+        totalTokens: 33
+      },
+      {
+        sessionId: 'session-at-range-end',
+        turnId: 'turn-at-range-end',
+        responseId: 'response-at-range-end',
+        timestamp: '2026-09-11T00:00:00.000Z',
+        inputTokens: 40,
+        outputTokens: 4,
+        totalTokens: 44
+      }
+    ];
+    for (const event of events) {
+      assert.equal(store.ingest(usageRecord(event), `/active/${event.sessionId}.jsonl`, 'active', 0), true);
+    }
+
+    const unfilteredOverview = store.overview();
+    assert.deepEqual({
+      calls: unfilteredOverview.calls,
+      sessions: unfilteredOverview.sessions,
+      inputTokens: unfilteredOverview.inputTokens,
+      outputTokens: unfilteredOverview.outputTokens,
+      lastEventAt: unfilteredOverview.lastEventAt
+    }, {
+      calls: 4,
+      sessions: 3,
+      inputTokens: 100,
+      outputTokens: 10,
+      lastEventAt: '2026-09-11T00:00:00.000Z'
+    });
+    assert.equal(store.session('session-in-range').length, 2);
+    assert.deepEqual(store.sessions().map(({ sessionId }) => sessionId), [
+      'session-at-range-end',
+      'session-in-range',
+      'session-before-range'
+    ]);
+
+    const range = {
+      from: '2026-09-10T00:00:00.000Z',
+      to: '2026-09-11T00:00:00.000Z'
+    };
+    const filteredOverview = store.overview(range);
+    assert.deepEqual({
+      calls: filteredOverview.calls,
+      sessions: filteredOverview.sessions,
+      inputTokens: filteredOverview.inputTokens,
+      outputTokens: filteredOverview.outputTokens,
+      lastEventAt: filteredOverview.lastEventAt
+    }, {
+      calls: 2,
+      sessions: 1,
+      inputTokens: 50,
+      outputTokens: 5,
+      lastEventAt: '2026-09-10T12:00:00.000Z'
+    });
+
+    const filteredSessions = store.sessions(100, range);
+    assert.deepEqual(filteredSessions.map(({ sessionId, calls, inputTokens, outputTokens }) => ({
+      sessionId,
+      calls,
+      inputTokens,
+      outputTokens
+    })), [{
+      sessionId: 'session-in-range',
+      calls: 2,
+      inputTokens: 50,
+      outputTokens: 5
+    }]);
+
+    assert.deepEqual(store.session('session-in-range', range).map(({ eventKey, occurredAt }) => ({ eventKey, occurredAt })), [
+      { eventKey: 'response-in-range', occurredAt: '2026-09-10T12:00:00.000Z' },
+      { eventKey: 'response-at-range-start', occurredAt: '2026-09-10T00:00:00.000Z' }
+    ]);
+    assert.deepEqual(store.session('session-at-range-end', range), []);
+    assert.deepEqual(store.session('session-before-range', range), []);
+  } finally {
+    await closeTemporaryStore(directory, store);
+  }
+});
+
 test('TelemetryStore stores effort on the matching usage event and does not inherit it', async () => {
   const { directory, store } = await temporaryStore();
   try {
@@ -1122,16 +1231,22 @@ test('frontend formats updated header, trace timestamps, and token counts with K
     const node = {
       tagName,
       children: [],
+      dataset: {},
+      attributes: {},
       className: '',
       onclick: null,
       _textContent: '',
       _innerHTML: '',
       append(...children) { this.children.push(...children); },
       replaceChildren(...children) { this.children = children; },
+      setAttribute(name, value) { this.attributes[name] = String(value); },
       set textContent(value) { this._textContent = String(value); },
       get textContent() { return this._textContent; },
       set innerHTML(value) { this._innerHTML = String(value); },
-      get innerHTML() { return this._innerHTML; }
+      get innerHTML() {
+        if (!this.children.length) return this._innerHTML || this._textContent;
+        return this.children.map((child) => `<${child.tagName}>${child.innerHTML}</${child.tagName}>`).join('');
+      }
     };
     return node;
   };
@@ -1150,7 +1265,10 @@ test('frontend formats updated header, trace timestamps, and token counts with K
   };
   const context = vm.createContext({
     document,
-    fetch: async (url) => ({ json: async () => payloads[url] }),
+    fetch: async (url) => {
+      const pathname = new URL(url, 'http://localhost').pathname;
+      return { ok: true, json: async () => payloads[pathname] };
+    },
     EventSource: class { addEventListener() {} },
     Intl,
     console

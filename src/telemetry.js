@@ -115,9 +115,15 @@ export class TelemetryStore {
     this.needsSessionSourceBackfill = false;
     return updated;
   }
-  overview() { return this.db.prepare(`SELECT COUNT(*) AS calls, COUNT(DISTINCT session_id) AS sessions, COALESCE(SUM(input_tokens),0) AS inputTokens, COALESCE(SUM(cached_input_tokens),0) AS cachedInputTokens, COALESCE(SUM(input_tokens - cached_input_tokens),0) AS uncachedInputTokens, COALESCE(SUM(output_tokens),0) AS outputTokens, COALESCE(SUM(cost_total),0) AS costTotal, MAX(occurred_at) AS lastEventAt FROM usage_events`).get(); }
-  sessions(limit = 100, { titleCatalogPath } = {}) {
-    const sessions = this.db.prepare(`SELECT usage.session_id AS sessionId, MAX(usage.occurred_at) AS lastEventAt, CASE WHEN COUNT(DISTINCT usage.model) = 1 THEN MAX(usage.model) ELSE 'mixed' END AS model, COUNT(*) AS calls, SUM(CASE WHEN threads.thread_source = 'subagent' THEN 1 ELSE 0 END) AS subagentCalls, SUM(usage.input_tokens) AS inputTokens, SUM(usage.cached_input_tokens) AS cachedInputTokens, SUM(usage.input_tokens - usage.cached_input_tokens) AS uncachedInputTokens, SUM(usage.output_tokens) AS outputTokens, SUM(usage.total_tokens) AS totalTokens, SUM(usage.cost_input) AS costInput, SUM(usage.cost_cached) AS costCached, SUM(usage.cost_output) AS costOutput, SUM(usage.cost_total) AS costTotal FROM usage_events AS usage LEFT JOIN threads ON threads.thread_id = usage.thread_id GROUP BY usage.session_id ORDER BY lastEventAt DESC LIMIT ?`).all(limit);
+  timeWhere(alias, range) { return range ? { sql: ` WHERE ${alias}.occurred_at >= ? AND ${alias}.occurred_at < ?`, params: [range.from, range.to] } : { sql: '', params: [] }; }
+  overview(range) {
+    const where = this.timeWhere('usage_events', range);
+    return this.db.prepare(`SELECT COUNT(*) AS calls, COUNT(DISTINCT session_id) AS sessions, COALESCE(SUM(input_tokens),0) AS inputTokens, COALESCE(SUM(cached_input_tokens),0) AS cachedInputTokens, COALESCE(SUM(input_tokens - cached_input_tokens),0) AS uncachedInputTokens, COALESCE(SUM(output_tokens),0) AS outputTokens, COALESCE(SUM(cost_total),0) AS costTotal, MAX(occurred_at) AS lastEventAt FROM usage_events${where.sql}`).get(...where.params);
+  }
+  sessions(limit = 100, options = {}) {
+    const { titleCatalogPath, range = options.from && options.to ? options : null } = options;
+    const where = this.timeWhere('usage', range);
+    const sessions = this.db.prepare(`SELECT usage.session_id AS sessionId, MAX(usage.occurred_at) AS lastEventAt, CASE WHEN COUNT(DISTINCT usage.model) = 1 THEN MAX(usage.model) ELSE 'mixed' END AS model, COUNT(*) AS calls, SUM(CASE WHEN threads.thread_source = 'subagent' THEN 1 ELSE 0 END) AS subagentCalls, SUM(usage.input_tokens) AS inputTokens, SUM(usage.cached_input_tokens) AS cachedInputTokens, SUM(usage.input_tokens - usage.cached_input_tokens) AS uncachedInputTokens, SUM(usage.output_tokens) AS outputTokens, SUM(usage.total_tokens) AS totalTokens, SUM(usage.cost_input) AS costInput, SUM(usage.cost_cached) AS costCached, SUM(usage.cost_output) AS costOutput, SUM(usage.cost_total) AS costTotal FROM usage_events AS usage LEFT JOIN threads ON threads.thread_id = usage.thread_id${where.sql} GROUP BY usage.session_id ORDER BY lastEventAt DESC LIMIT ?`).all(...where.params, limit);
     const titles = new Map();
     if (titleCatalogPath && sessions.length) {
       let catalog;
@@ -136,7 +142,11 @@ export class TelemetryStore {
     }
     return sessions.map((session) => ({ ...session, displayTitle: titles.get(session.sessionId) || session.sessionId }));
   }
-  session(id) { return this.db.prepare(`SELECT usage.event_key AS eventKey, usage.occurred_at AS occurredAt, usage.thread_id AS threadId, usage.model, usage.model_resolution AS modelResolution, usage.effort, usage.input_tokens AS inputTokens, usage.cached_input_tokens AS cachedInputTokens, usage.input_tokens - usage.cached_input_tokens AS uncachedInputTokens, usage.output_tokens AS outputTokens, usage.reasoning_output_tokens AS reasoningOutputTokens, usage.total_tokens AS totalTokens, usage.cost_input AS costInput, usage.cost_cached AS costCached, usage.cost_output AS costOutput, usage.cost_total AS costTotal, threads.thread_source AS threadSource FROM usage_events AS usage LEFT JOIN threads ON threads.thread_id = usage.thread_id WHERE usage.session_id = ? ORDER BY usage.occurred_at DESC LIMIT 250`).all(id).map((row) => ({ ...row, isSubagent: row.threadSource == null ? null : row.threadSource === 'subagent' })); }
+  session(id, range) {
+    const params = [id, ...(range ? [range.from, range.to] : [])];
+    const condition = range ? ' WHERE usage.session_id = ? AND usage.occurred_at >= ? AND usage.occurred_at < ?' : ' WHERE usage.session_id = ?';
+    return this.db.prepare(`SELECT usage.event_key AS eventKey, usage.occurred_at AS occurredAt, usage.thread_id AS threadId, usage.model, usage.model_resolution AS modelResolution, usage.effort, usage.input_tokens AS inputTokens, usage.cached_input_tokens AS cachedInputTokens, usage.input_tokens - usage.cached_input_tokens AS uncachedInputTokens, usage.output_tokens AS outputTokens, usage.reasoning_output_tokens AS reasoningOutputTokens, usage.total_tokens AS totalTokens, usage.cost_input AS costInput, usage.cost_cached AS costCached, usage.cost_output AS costOutput, usage.cost_total AS costTotal, threads.thread_source AS threadSource FROM usage_events AS usage LEFT JOIN threads ON threads.thread_id = usage.thread_id${condition} ORDER BY usage.occurred_at DESC LIMIT 250`).all(...params).map((row) => ({ ...row, isSubagent: row.threadSource == null ? null : row.threadSource === 'subagent' }));
+  }
 }
 
 async function filesUnder(directory) {

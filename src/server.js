@@ -13,11 +13,23 @@ const watcher = new TelemetryWatcher(store, telemetryRoots);
 const clients = new Set();
 const json = (response, data, status = 200) => { response.writeHead(status, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' }); response.end(JSON.stringify(data)); };
 const broadcast = () => { const payload = `event: telemetry\ndata: ${JSON.stringify({ updatedAt: new Date().toISOString() })}\n\n`; for (const client of clients) client.write(payload); };
+function dateRange(url) {
+  const from = url.searchParams.get('from');
+  const to = url.searchParams.get('to');
+  if (!from && !to) return { range: null };
+  if (!from || !to) return { error: 'Informe as datas inicial e final.' };
+  const fromDate = new Date(from);
+  const toDate = new Date(to);
+  if (Number.isNaN(fromDate.getTime()) || Number.isNaN(toDate.getTime()) || fromDate >= toDate) return { error: 'O intervalo de datas é inválido.' };
+  return { range: { from: fromDate.toISOString(), to: toDate.toISOString() } };
+}
 const server = http.createServer(async (request, response) => {
   const url = new URL(request.url, 'http://127.0.0.1');
-  if (url.pathname === '/api/overview') return json(response, store.overview());
-  if (url.pathname === '/api/sessions') return json(response, store.sessions(Math.min(Number(url.searchParams.get('limit')) || 100, 250), { titleCatalogPath: path.join(process.env.HOME, '.codex', 'sqlite', 'codex-dev.db') }));
-  if (url.pathname.startsWith('/api/sessions/')) return json(response, store.session(decodeURIComponent(url.pathname.slice('/api/sessions/'.length))));
+  const temporal = dateRange(url);
+  if (temporal.error && url.pathname.startsWith('/api/')) return json(response, { error: temporal.error }, 400);
+  if (url.pathname === '/api/overview') return json(response, store.overview(temporal.range));
+  if (url.pathname === '/api/sessions') return json(response, store.sessions(Math.min(Number(url.searchParams.get('limit')) || 100, 250), { titleCatalogPath: path.join(process.env.HOME, '.codex', 'sqlite', 'codex-dev.db'), range: temporal.range }));
+  if (url.pathname.startsWith('/api/sessions/')) return json(response, store.session(decodeURIComponent(url.pathname.slice('/api/sessions/'.length)), temporal.range));
   if (url.pathname === '/events') { response.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-cache', connection: 'keep-alive' }); response.write('retry: 1500\n\n'); clients.add(response); request.on('close', () => clients.delete(response)); return; }
   const publicFile = url.pathname === '/app.js' ? 'app.js' : url.pathname === '/styles.css' ? 'styles.css' : 'index.html';
   const { readFile } = await import('node:fs/promises');
